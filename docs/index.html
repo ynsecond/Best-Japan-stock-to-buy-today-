@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="株Picker">
+<meta name="theme-color" content="#0a0a1a">
+<title>株Picker - 東証全銘柄AI分析</title>
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230a0a1a' width='100' height='100' rx='20'/><text y='68' x='50' text-anchor='middle' font-size='55'>📈</text></svg>">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+--bg:#0a0a1a;--card:#141428;--border:#2a2a4a;--text:#e8e8f0;--dim:#8888aa;
+--accent:#ffd700;--accent2:#ff6b35;--green:#00e676;--red:#ff5252;--blue:#448aff;
+--safe-top:env(safe-area-inset-top,20px);--safe-bottom:env(safe-area-inset-bottom,0px)
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-user-select:none;user-select:none;overflow-x:hidden}
+.header{background:linear-gradient(135deg,#1a1a3e,#0d0d2b);padding:calc(var(--safe-top) + 8px) 16px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+.header h1{font-size:20px;font-weight:700;background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header p{font-size:11px;color:var(--dim);margin-top:2px}
+.tabs{display:flex;gap:0;background:var(--card);border-bottom:1px solid var(--border);position:sticky;top:68px;z-index:99}
+.tab{flex:1;padding:12px 0;text-align:center;font-size:13px;font-weight:600;color:var(--dim);border:none;background:none;border-bottom:2px solid transparent;cursor:pointer;transition:.2s}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.page{display:none;padding:16px;padding-bottom:calc(var(--safe-bottom) + 80px)}
+.page.active{display:block}
+.mode-selector{display:flex;gap:8px;margin-bottom:16px}
+.mode-btn{flex:1;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;font-weight:600;text-align:center;cursor:pointer;transition:.2s}
+.mode-btn.active{border-color:var(--accent);background:rgba(255,215,0,.1);color:var(--accent)}
+.mode-btn small{display:block;font-size:10px;color:var(--dim);margin-top:4px;font-weight:400}
+.scan-btn{width:100%;padding:16px;border-radius:16px;border:none;font-size:16px;font-weight:700;color:#000;background:linear-gradient(135deg,var(--accent),var(--accent2));cursor:pointer;transition:.2s;margin-bottom:16px;position:relative;overflow:hidden}
+.scan-btn:active{transform:scale(.98);opacity:.9}
+.scan-btn:disabled{opacity:.5;cursor:not-allowed}
+.scan-btn .shine{position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.3),transparent);animation:shine 2s infinite}
+@keyframes shine{to{left:100%}}
+.progress-area{margin-bottom:16px;display:none}
+.progress-area.active{display:block}
+.progress-bar{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:8px}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:3px;transition:width .3s;width:0}
+.progress-text{font-size:11px;color:var(--dim);text-align:center}
+.result-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:12px;animation:fadeIn .4s}
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.result-rank{display:inline-block;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#000;font-size:12px;font-weight:800;padding:4px 10px;border-radius:8px;margin-bottom:12px}
+.result-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.result-ticker{font-size:22px;font-weight:800;color:var(--accent)}
+.result-name{font-size:14px;color:var(--dim);margin-top:2px}
+.result-sector{font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(68,138,255,.15);color:var(--blue);font-weight:600}
+.result-score{text-align:right}
+.result-score .num{font-size:32px;font-weight:800;color:var(--green)}
+.result-score .label{font-size:10px;color:var(--dim)}
+.result-price{font-size:18px;font-weight:700;margin-bottom:12px}
+.result-change{font-size:13px;font-weight:600;margin-left:8px}
+.result-change.up{color:var(--green)}
+.result-change.down{color:var(--red)}
+.reasons{display:flex;flex-wrap:wrap;gap:6px}
+.reason-tag{font-size:11px;padding:4px 10px;border-radius:8px;background:rgba(255,215,0,.1);color:var(--accent);border:1px solid rgba(255,215,0,.2)}
+.history-item{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.history-left{flex:1}
+.history-ticker{font-size:15px;font-weight:700;color:var(--accent)}
+.history-name{font-size:12px;color:var(--dim)}
+.history-date{font-size:10px;color:var(--dim);margin-top:2px}
+.history-right{text-align:right}
+.history-price{font-size:14px;font-weight:600}
+.history-change{font-size:13px;font-weight:700}
+.history-del{background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:4px 8px;opacity:.5}
+.history-del:hover{opacity:1}
+.empty-state{text-align:center;padding:60px 20px;color:var(--dim)}
+.empty-state .icon{font-size:48px;margin-bottom:16px}
+.empty-state p{font-size:14px}
+.settings-row{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--border)}
+.settings-row label{font-size:14px}
+.settings-row select,.settings-row input{background:var(--card);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;font-size:13px}
+.info-box{background:rgba(68,138,255,.1);border:1px solid rgba(68,138,255,.2);border-radius:12px;padding:14px;margin-bottom:16px;font-size:12px;color:var(--blue);line-height:1.6}
+.cancel-btn{width:100%;padding:12px;border-radius:12px;border:1px solid var(--red);background:rgba(255,82,82,.1);color:var(--red);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:16px;display:none}
+.cancel-btn.active{display:block}
+.stats-bar{display:flex;gap:8px;margin-bottom:16px}
+.stat-item{flex:1;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center}
+.stat-num{font-size:18px;font-weight:800;color:var(--accent)}
+.stat-label{font-size:9px;color:var(--dim);margin-top:2px}
+.top-results{margin-top:8px}
+.top-header{font-size:14px;font-weight:700;margin-bottom:12px;color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="header">
+<h1>株Picker AI</h1>
+<p>東証全銘柄テクニカル分析 ・ iPhone専用</p>
+</div>
+<div class="tabs">
+<button class="tab active" onclick="showPage(0)">銘柄検出</button>
+<button class="tab" onclick="showPage(1)">検出履歴</button>
+<button class="tab" onclick="showPage(2)">使い方</button>
+</div>
+
+<div class="page active" id="page0">
+<div class="info-box">
+東証に上場する約4,000銘柄をスキャンし、AIテクニカル分析で最も買い時の銘柄を検出します。
+</div>
+<div class="mode-selector">
+<div class="mode-btn active" onclick="setMode('quick')" id="mode-quick">
+クイック<small>主要800銘柄 / 約2分</small>
+</div>
+<div class="mode-btn" onclick="setMode('full')" id="mode-full">
+フルスキャン<small>全銘柄 / 約5-8分</small>
+</div>
+</div>
+<button class="scan-btn" id="scanBtn" onclick="startScan()">
+<span class="shine"></span>
+今日の最強銘柄を探す
+</button>
+<button class="cancel-btn" id="cancelBtn" onclick="cancelScan()">スキャン中止</button>
+<div class="progress-area" id="progressArea">
+<div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+<div class="progress-text" id="progressText">準備中...</div>
+</div>
+<div class="stats-bar" id="statsBar" style="display:none">
+<div class="stat-item"><div class="stat-num" id="statScanned">0</div><div class="stat-label">スキャン済</div></div>
+<div class="stat-item"><div class="stat-num" id="statValid">0</div><div class="stat-label">有効銘柄</div></div>
+<div class="stat-item"><div class="stat-num" id="statAnalyzed">0</div><div class="stat-label">分析済</div></div>
+</div>
+<div class="top-results" id="topResults"></div>
+</div>
+
+<div class="page" id="page1">
+<div id="historyList"></div>
+</div>
+
+<div class="page" id="page2">
+<div class="result-card">
+<h3 style="color:var(--accent);margin-bottom:12px">iPhoneへのインストール方法</h3>
+<ol style="font-size:13px;line-height:2;padding-left:20px;color:var(--dim)">
+<li>Safari でこのページを開く</li>
+<li>画面下の <b style="color:var(--text)">共有ボタン ↑</b> をタップ</li>
+<li><b style="color:var(--text)">「ホーム画面に追加」</b>を選択</li>
+<li>アプリとして起動できます</li>
+</ol>
+</div>
+<div class="result-card">
+<h3 style="color:var(--accent);margin-bottom:12px">スキャンモード</h3>
+<p style="font-size:13px;color:var(--dim);line-height:1.8">
+<b style="color:var(--text)">クイック:</b> 主要800銘柄（日経225+TOPIX500+人気銘柄）を約2分でスキャン。<br>
+<b style="color:var(--text)">フルスキャン:</b> 東証コード1301〜9999の全銘柄（約4,000社）を網羅的にスキャン。約5〜8分。
+</p>
+</div>
+<div class="result-card">
+<h3 style="color:var(--accent);margin-bottom:12px">分析指標</h3>
+<p style="font-size:13px;color:var(--dim);line-height:1.8">
+SMA/EMAトレンド、RSI、MACD、ボリンジャーバンド、一目均衡表、ストキャスティクス、出来高分析、ATR、OBV、サポート/レジスタンスの10種類のテクニカル指標を組み合わせたAIスコアリング。
+</p>
+</div>
+<div class="result-card">
+<h3 style="color:var(--accent);margin-bottom:12px">注意事項</h3>
+<p style="font-size:13px;color:var(--dim);line-height:1.8">
+本アプリは投資助言ではありません。テクニカル分析に基づく参考情報です。投資判断は自己責任でお願いします。データはYahoo Finance APIから取得しています。
+</p>
+</div>
+</div>
+
+<script>
+// ============ CONFIG ============
+const PROXIES = [
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => url // direct (fallback)
+];
+let proxyIndex = 0;
+let scanMode = 'quick';
+let scanning = false;
+let cancelled = false;
+
+// ============ CURATED STOCK LISTS ============
+// Nikkei 225 + TOPIX Core/Large + popular stocks ≈ 800
+const QUICK_STOCKS = [
+  // 水産・農林
+  1332,1333,1301,1305,1377,
+  // 鉱業
+  1515,1518,1514,
+  // 建設
+  1719,1720,1721,1801,1802,1803,1808,1812,1820,1821,1824,1828,1860,1861,1878,1881,1893,1911,1925,1928,1941,1942,1944,1951,1959,1963,
+  // 食料品
+  2002,2053,2058,2112,2127,2146,2154,2175,2181,2201,2206,2207,2212,2229,2264,2267,2269,2270,2281,2282,2292,2296,2309,2327,2331,2337,2371,2379,2412,2413,2427,2432,2433,2440,2471,2475,2491,2501,2502,2503,2531,2579,2587,2593,2594,2607,2651,2659,2670,2681,2685,2695,2702,2726,2730,2768,2784,2801,2802,2809,2810,2811,2815,2871,2875,2876,2882,2897,2914,
+  // 繊維・パルプ
+  3101,3103,3105,3110,3116,3148,3153,3167,3176,3186,3197,3254,3288,3289,3291,3360,3382,3391,3395,3401,3402,3405,3407,3436,3443,
+  // 化学
+  3526,3543,3563,3565,3591,3626,3632,3635,3636,3659,3661,3662,3665,3668,3669,3676,3679,3681,3697,3738,3741,3762,3765,3769,3774,3778,3788,3793,3861,3863,3865,3878,3880,3893,3901,3902,3941,3951,
+  // 窯業
+  4004,4005,4021,4023,4041,4042,4043,4044,4045,4046,4047,4061,4062,4063,4088,4091,4095,4098,4099,4114,4118,4151,4183,4185,4186,4188,4189,4203,4204,4205,4206,4208,4272,4284,4293,4307,4308,4312,4321,4324,4326,4331,4336,4338,4344,4345,4348,4369,4382,4385,4389,4395,4397,4403,4420,4425,4428,4432,4434,4436,4441,4443,4449,4452,4461,4471,4478,4480,4483,4485,4488,4489,4493,4502,4503,4506,4507,4508,4516,4519,4521,4523,4527,4528,4530,4536,4540,4543,4544,4547,4549,4551,4553,4555,4558,4565,4568,4569,4571,4578,4581,4587,4593,4611,4612,4613,4615,4617,4631,4634,4661,4666,4676,4680,4681,4684,4685,4689,4704,4716,4722,4725,4726,4732,4733,4739,4745,4746,4751,4753,4755,4756,4763,4768,4812,4819,4828,4839,4845,4848,4849,4901,4902,4911,4912,4919,4922,4927,4951,4955,4966,4967,4971,4974,4980,4985,
+  // 石油・ゴム
+  5002,5006,5008,5011,5015,5019,5020,5021,5101,5105,5108,5110,
+  // ガラス・土石
+  5201,5202,5214,5232,5233,5301,5302,5310,5332,5333,5334,
+  // 鉄鋼
+  5393,5401,5406,5411,5423,5444,5463,5471,5480,5486,
+  // 非鉄金属
+  5541,5563,5631,5703,5706,5707,5711,5713,5714,5715,5727,5741,5801,5802,5803,5805,5831,5851,5857,
+  // 金属製品
+  5901,5911,5929,5938,5943,5947,5975,5991,
+  // 機械
+  6005,6013,6028,6098,6101,6103,6104,6113,6118,6134,6135,6136,6141,6146,6178,6183,6196,6201,6268,6269,6273,6282,6284,6287,6288,6289,6301,6302,6305,6324,6326,6328,6330,6361,6363,6366,6367,6370,6371,6376,6383,6387,6395,6412,6417,6432,6436,6440,6444,6448,6457,6460,6463,6465,6471,6472,6473,
+  // 電気機器
+  6479,6481,6486,6488,6501,6502,6503,6504,6506,6507,6508,6526,6532,6544,6556,6571,6586,6588,6592,6594,6619,6622,6623,6624,6625,6627,6628,6632,6641,6644,6645,6652,6654,6655,6657,6658,6665,6666,6669,6670,6674,6676,6677,6701,6702,6703,6706,6707,6723,6724,6728,6737,6740,6741,6750,6752,6753,6754,6755,6756,6758,6762,6764,6768,6770,6773,6779,6794,6804,6806,6807,6814,6817,6841,6845,6849,6856,6857,6861,6862,6866,6869,6871,6877,6879,6902,6920,6923,6925,6929,6937,6941,6952,6954,6955,6958,6960,6963,6965,6966,6967,6971,6976,6981,6988,6995,6997,6999,
+  // 輸送用機器
+  7003,7004,7011,7012,7013,7014,7051,7148,7164,7167,7170,7172,7175,7181,7182,7186,7189,7199,7201,7202,7203,7205,7211,7213,7224,7226,7231,7240,7241,7242,7244,7245,7246,7247,7248,7250,7251,7252,7259,7261,7267,7269,7270,7272,7276,7278,7280,7282,7283,7296,
+  // 精密機器
+  7309,7313,7453,7456,7458,7459,7460,7476,7508,7513,7518,7532,7552,7564,7581,7599,7606,7607,7616,7649,7733,7735,7740,7741,7743,7744,7747,7751,7752,7762,7769,
+  // その他製品
+  7811,7816,7832,7836,7839,7846,7862,7867,7874,7911,7912,7936,7951,7956,7966,7970,7972,7974,7984,7988,
+  // 商社
+  8001,8002,8007,8011,8012,8015,8020,8028,8031,8035,8036,8043,8050,8053,8056,8058,8060,8068,8069,8074,8078,8086,8088,8096,8098,8101,8111,8113,8114,8117,8130,8132,8136,8141,8154,8155,8158,8163,8168,8170,8174,
+  // 小売
+  8179,8184,8185,8194,8197,8200,8214,8217,8218,8219,8227,8230,8233,8237,8242,8244,8248,8252,8253,8263,8267,8273,8276,8278,8279,8282,8283,8285,8287,8291,8303,8304,8306,8308,8309,8316,8324,8325,8331,8332,8334,8336,8338,8341,8343,8345,8346,8350,8354,8355,8358,8359,8360,8361,8362,8363,8364,8365,8366,8367,8368,8369,8370,8377,8381,8382,8385,8386,8387,8388,8392,8393,8395,8399,
+  // 銀行・保険・証券・その他金融
+  8410,8411,8418,8424,8425,8439,8462,8473,8515,8519,8524,8527,8528,8536,8541,8542,8543,8544,8547,8550,8554,8556,8558,8560,8563,8566,8570,8572,8584,8585,8586,8591,8593,8595,8596,8601,8604,8609,8613,8616,8617,8628,8630,8697,8698,8699,8700,8706,8707,8708,8711,8713,8714,8715,8725,8729,8739,8741,8742,8750,8766,8771,8795,
+  // 不動産
+  8801,8802,8803,8804,8806,8811,8818,8830,8836,8841,8848,8850,8860,8876,8881,8897,8905,8909,8914,8918,8919,8920,8923,8925,8929,8931,8934,8940,8951,8952,8953,8954,8955,8957,8958,8960,8961,8963,8964,8966,8967,8968,8972,8975,8976,8977,8979,8984,8985,8986,8987,
+  // 陸運・海運・空運・倉庫
+  9001,9003,9005,9006,9007,9008,9009,9010,9020,9021,9022,9024,9042,9044,9045,9046,9048,9049,9055,9064,9065,9068,9070,9075,9076,9086,9101,9104,9107,9110,9119,9142,9143,9145,9147,9164,9201,9202,9232,9261,9301,9302,9303,9304,
+  // 情報通信
+  9404,9412,9413,9414,9417,9418,9419,9422,9424,9432,9433,9434,9435,9436,9449,9450,9467,9468,9470,9474,9475,9476,9479,9501,9502,9503,9504,9505,9506,9507,9508,9509,9511,9513,9514,9519,9531,9532,9533,9534,9536,9543,9551,9552,9553,9601,9602,9603,9605,9607,9612,9613,9616,9619,9621,9627,9628,9629,9632,9633,9635,9639,9641,9643,9644,9648,9651,9658,9672,9681,9684,9687,9692,9694,9697,9699,9706,9707,9708,9715,9716,9717,9719,9722,9726,9729,9735,9739,9740,9743,9744,9746,9749,9755,9757,9759,9760,9762,9766,9769,9783,9787,9790,9793,9810,9820,9831,9832,9834,9837,9842,9843,9845,9850,9853,9861,9861,9864,9869,9880,9882,9889,9904,9927,9928,9930,9932,9934,9936,9940,9941,9942,9945,9946,9948,9956,9962,9966,9969,9973,9983,9984,9987,9989,9990,9991,9993,9994,9995,9997
+];
+
+// ============ TECHNICAL INDICATORS ============
+function calcSMA(data, period) {
+  const r = new Array(data.length).fill(null);
+  for (let i = period - 1; i < data.length; i++) {
+    let s = 0; for (let j = 0; j < period; j++) s += data[i - j];
+    r[i] = s / period;
+  }
+  return r;
+}
+function calcEMA(data, period) {
+  const r = new Array(data.length).fill(null);
+  const k = 2 / (period + 1);
+  let start = -1;
+  for (let i = 0; i < data.length; i++) { if (data[i] !== null) { start = i; break; } }
+  if (start < 0) return r;
+  r[start] = data[start];
+  for (let i = start + 1; i < data.length; i++) {
+    if (data[i] !== null && r[i-1] !== null) r[i] = data[i] * k + r[i-1] * (1 - k);
+  }
+  return r;
+}
+function calcRSI(closes, period = 14) {
+  const r = new Array(closes.length).fill(null);
+  if (closes.length < period + 1) return r;
+  let gainSum = 0, lossSum = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i-1];
+    if (d > 0) gainSum += d; else lossSum -= d;
+  }
+  let avgGain = gainSum / period, avgLoss = lossSum / period;
+  r[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i-1];
+    avgGain = (avgGain * (period - 1) + (d > 0 ? d : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (d < 0 ? -d : 0)) / period;
+    r[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return r;
+}
+function calcMACD(closes) {
+  const ema12 = calcEMA(closes, 12), ema26 = calcEMA(closes, 26);
+  const macd = closes.map((_, i) => (ema12[i] !== null && ema26[i] !== null) ? ema12[i] - ema26[i] : null);
+  const signal = calcEMA(macd, 9);
+  const hist = macd.map((v, i) => (v !== null && signal[i] !== null) ? v - signal[i] : null);
+  return { macd, signal, histogram: hist };
+}
+function calcBB(closes, period = 20, mult = 2) {
+  const sma = calcSMA(closes, period);
+  const upper = new Array(closes.length).fill(null);
+  const lower = new Array(closes.length).fill(null);
+  for (let i = period - 1; i < closes.length; i++) {
+    let v = 0; for (let j = 0; j < period; j++) v += (closes[i-j] - sma[i]) ** 2;
+    const std = Math.sqrt(v / period);
+    upper[i] = sma[i] + mult * std;
+    lower[i] = sma[i] - mult * std;
+  }
+  return { middle: sma, upper, lower };
+}
+function calcStochastic(highs, lows, closes, kPeriod = 14, dPeriod = 3) {
+  const k = new Array(closes.length).fill(null);
+  for (let i = kPeriod - 1; i < closes.length; i++) {
+    let hh = -Infinity, ll = Infinity;
+    for (let j = 0; j < kPeriod; j++) { hh = Math.max(hh, highs[i-j]); ll = Math.min(ll, lows[i-j]); }
+    k[i] = hh === ll ? 50 : ((closes[i] - ll) / (hh - ll)) * 100;
+  }
+  const d = calcSMA(k.map(v => v ?? 0), dPeriod);
+  return { k, d };
+}
+function calcATR(highs, lows, closes, period = 14) {
+  const tr = [0];
+  for (let i = 1; i < closes.length; i++) {
+    tr.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i-1]), Math.abs(lows[i] - closes[i-1])));
+  }
+  return calcSMA(tr, period);
+}
+function calcOBV(closes, volumes) {
+  const r = [0];
+  for (let i = 1; i < closes.length; i++) {
+    r.push(r[i-1] + (closes[i] > closes[i-1] ? volumes[i] : closes[i] < closes[i-1] ? -volumes[i] : 0));
+  }
+  return r;
+}
+function calcIchimoku(highs, lows, tenkan = 9, kijun = 26, senkou = 52) {
+  const hl = (h, l, p, i) => { if (i < p - 1) return null; let hh = -Infinity, ll = Infinity; for (let j = 0; j < p; j++) { hh = Math.max(hh, h[i-j]); ll = Math.min(ll, l[i-j]); } return (hh + ll) / 2; };
+  const t = highs.map((_, i) => hl(highs, lows, tenkan, i));
+  const k = highs.map((_, i) => hl(highs, lows, kijun, i));
+  const a = t.map((v, i) => (v !== null && k[i] !== null) ? (v + k[i]) / 2 : null);
+  const b = highs.map((_, i) => hl(highs, lows, senkou, i));
+  return { tenkan: t, kijun: k, senkouA: a, senkouB: b };
+}
+
+// ============ STOCK ANALYZER ============
+function analyzeStock(bars) {
+  if (!bars || bars.length < 60) return null;
+  const closes = bars.map(b => b.close);
+  const highs = bars.map(b => b.high);
+  const lows = bars.map(b => b.low);
+  const volumes = bars.map(b => b.volume);
+  const last = closes.length - 1;
+  let score = 0;
+  const reasons = [];
+
+  // SMA
+  const sma5 = calcSMA(closes, 5), sma25 = calcSMA(closes, 25), sma75 = calcSMA(closes, 75);
+  if (sma5[last] && sma25[last]) {
+    if (sma5[last] > sma25[last] && sma5[last-1] && sma25[last-1] && sma5[last-1] <= sma25[last-1]) { score += 15; reasons.push('ゴールデンクロス発生'); }
+    else if (sma5[last] > sma25[last]) { score += 8; reasons.push('上昇トレンド継続'); }
+    if (closes[last] > sma25[last]) { score += 5; reasons.push('25日線上'); }
+    if (sma75[last] && sma5[last] > sma25[last] && sma25[last] > sma75[last]) { score += 10; reasons.push('パーフェクトオーダー'); }
+  }
+
+  // RSI
+  const rsi = calcRSI(closes);
+  const rsiVal = rsi[last];
+  if (rsiVal !== null) {
+    if (rsiVal >= 30 && rsiVal <= 45) { score += 12; reasons.push(`RSI反転圏(${rsiVal.toFixed(1)})`); }
+    else if (rsiVal > 45 && rsiVal <= 60) { score += 6; reasons.push(`RSI中立(${rsiVal.toFixed(1)})`); }
+    else if (rsiVal < 30 && rsi[last-1] !== null && rsiVal > rsi[last-1]) { score += 10; reasons.push(`RSI底打ち反転(${rsiVal.toFixed(1)})`); }
+    else if (rsiVal > 70) { score -= 5; }
+  }
+
+  // MACD
+  const macd = calcMACD(closes);
+  if (macd.macd[last] !== null && macd.signal[last] !== null) {
+    if (macd.macd[last] > macd.signal[last] && macd.macd[last-1] !== null && macd.signal[last-1] !== null && macd.macd[last-1] <= macd.signal[last-1]) { score += 14; reasons.push('MACDゴールデンクロス'); }
+    else if (macd.histogram[last] > 0) { score += 8; reasons.push('MACDヒストグラム正'); }
+    if (macd.macd[last] > 0 && macd.macd[last-1] !== null && macd.macd[last] > macd.macd[last-1]) { score += 5; reasons.push('MACD上昇中'); }
+  }
+
+  // Bollinger Bands
+  const bb = calcBB(closes);
+  if (bb.lower[last] !== null) {
+    if (closes[last] <= bb.lower[last] * 1.02 && closes[last] > closes[last-1]) { score += 12; reasons.push('BB下限バウンス'); }
+    if (bb.upper[last] && bb.lower[last]) {
+      const width = (bb.upper[last] - bb.lower[last]) / bb.middle[last];
+      if (width < 0.05) { score += 7; reasons.push('BBスクイーズ(低ボラ)'); }
+    }
+  }
+
+  // Volume
+  if (volumes[last] > 0) {
+    const avgVol = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+    if (volumes[last] > avgVol * 2 && closes[last] > closes[last-1]) { score += 12; reasons.push('出来高急増+上昇'); }
+    else if (volumes[last] > avgVol * 1.5 && closes[last] > closes[last-1]) { score += 7; reasons.push('出来高増加+上昇'); }
+    const obv = calcOBV(closes, volumes);
+    if (obv[last] > obv[last-5]) { score += 5; reasons.push('OBV上昇'); }
+  }
+
+  // Ichimoku
+  const ich = calcIchimoku(highs, lows);
+  if (ich.senkouA[last] !== null && ich.senkouB[last] !== null) {
+    const cloudTop = Math.max(ich.senkouA[last], ich.senkouB[last]);
+    const cloudBottom = Math.min(ich.senkouA[last], ich.senkouB[last]);
+    if (closes[last] > cloudTop) { score += 8; reasons.push('雲の上'); }
+    if (closes[last-1] <= cloudTop && closes[last] > cloudTop) { score += 12; reasons.push('雲ブレイクアウト'); }
+    if (ich.tenkan[last] !== null && ich.kijun[last] !== null && ich.tenkan[last] > ich.kijun[last]) { score += 5; reasons.push('転換線>基準線'); }
+  }
+
+  // Stochastic
+  const stoch = calcStochastic(highs, lows, closes);
+  if (stoch.k[last] !== null && stoch.d[last] !== null) {
+    if (stoch.k[last] < 30 && stoch.k[last] > stoch.d[last]) { score += 8; reasons.push('ストキャス売られ過ぎ反転'); }
+  }
+
+  // Momentum
+  const ret5 = (closes[last] - closes[last-5]) / closes[last-5] * 100;
+  if (ret5 > 0 && ret5 <= 5) { score += 6; reasons.push(`5日リターン+${ret5.toFixed(1)}%`); }
+  let upDays = 0;
+  for (let i = last; i > last - 5 && i > 0; i--) { if (closes[i] > closes[i-1]) upDays++; else break; }
+  if (upDays >= 3) { score += 5; reasons.push(`${upDays}日連続上昇`); }
+
+  // Support
+  const recent30Low = Math.min(...lows.slice(-30));
+  if (closes[last] <= recent30Low * 1.03 && closes[last] > closes[last-1]) { score += 8; reasons.push('サポートライン付近で反発'); }
+
+  // ATR
+  const atr = calcATR(highs, lows, closes);
+  if (atr[last] !== null && closes[last] > 0) {
+    const atrPct = atr[last] / closes[last] * 100;
+    if (atrPct >= 1.5 && atrPct <= 4) { score += 4; reasons.push('適正ボラティリティ'); }
+  }
+
+  return { score, reasons, price: closes[last], rsi: rsiVal };
+}
+
+// ============ API FETCH ============
+async function fetchWithProxy(url) {
+  for (let p = 0; p < PROXIES.length; p++) {
+    const pi = (proxyIndex + p) % PROXIES.length;
+    try {
+      const res = await fetch(PROXIES[pi](url), { signal: AbortSignal.timeout(15000) });
+      if (res.ok) { proxyIndex = pi; return res; }
+    } catch (e) { /* try next */ }
+  }
+  throw new Error('All proxies failed');
+}
+
+async function fetchQuoteBatch(tickers) {
+  const symbols = tickers.map(t => t + '.T').join(',');
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`;
+  try {
+    const res = await fetchWithProxy(url);
+    const data = await res.json();
+    return data?.quoteResponse?.result || [];
+  } catch { return []; }
+}
+
+async function fetchHistorical(ticker) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}.T?range=6mo&interval=1d`;
+  try {
+    const res = await fetchWithProxy(url);
+    const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result?.timestamp) return null;
+    const ts = result.timestamp;
+    const q = result.indicators.quote[0];
+    const bars = [];
+    for (let i = 0; i < ts.length; i++) {
+      if (q.close[i] != null && q.high[i] != null && q.low[i] != null && q.open[i] != null) {
+        bars.push({ date: new Date(ts[i] * 1000).toISOString().slice(0, 10), open: q.open[i], high: q.high[i], low: q.low[i], close: q.close[i], volume: q.volume[i] || 0 });
+      }
+    }
+    return bars;
+  } catch { return null; }
+}
+
+// ============ SCAN ENGINE ============
+async function startScan() {
+  if (scanning) return;
+  scanning = true;
+  cancelled = false;
+  const btn = document.getElementById('scanBtn');
+  const cancelBtn = document.getElementById('cancelBtn');
+  const progressArea = document.getElementById('progressArea');
+  const statsBar = document.getElementById('statsBar');
+  const topResults = document.getElementById('topResults');
+  btn.disabled = true;
+  cancelBtn.classList.add('active');
+  progressArea.classList.add('active');
+  statsBar.style.display = 'flex';
+  topResults.innerHTML = '';
+  updateProgress(0, '銘柄リスト準備中...');
+  updateStats(0, 0, 0);
+
+  try {
+    // Phase 1: Get stock codes
+    let codes;
+    if (scanMode === 'quick') {
+      codes = QUICK_STOCKS.map(String);
+    } else {
+      codes = [];
+      for (let i = 1301; i <= 9999; i++) codes.push(String(i));
+    }
+
+    // Phase 2: Batch quote screening
+    const batchSize = 50;
+    const batches = [];
+    for (let i = 0; i < codes.length; i += batchSize) {
+      batches.push(codes.slice(i, i + batchSize));
+    }
+
+    const validStocks = [];
+    let scanned = 0;
+
+    updateProgress(0, `${codes.length}銘柄をスクリーニング中...`);
+
+    for (let i = 0; i < batches.length; i++) {
+      if (cancelled) break;
+      const quotes = await fetchQuoteBatch(batches[i]);
+      scanned += batches[i].length;
+
+      for (const q of quotes) {
+        if (q.regularMarketPrice && q.regularMarketVolume > 50000 && q.marketCap > 1e9) {
+          validStocks.push({
+            ticker: q.symbol.replace('.T', ''),
+            name: q.shortName || q.longName || q.symbol,
+            price: q.regularMarketPrice,
+            change: q.regularMarketChangePercent || 0,
+            volume: q.regularMarketVolume,
+            marketCap: q.marketCap,
+            sector: q.sector || ''
+          });
+        }
+      }
+
+      const pct = ((i + 1) / batches.length) * 50;
+      updateProgress(pct, `スクリーニング: ${scanned}/${codes.length} (有効: ${validStocks.length})`);
+      updateStats(scanned, validStocks.length, 0);
+
+      // Rate limiting
+      if (i % 3 === 2) await sleep(500);
+    }
+
+    if (cancelled) { resetUI(); return; }
+
+    // Phase 3: Sort by potential (volume + change combo) and take top candidates
+    validStocks.sort((a, b) => {
+      // Prefer stocks with moderate positive change and high volume
+      const scoreA = (a.change > -3 && a.change < 10 ? 1 : 0) * Math.log(a.volume);
+      const scoreB = (b.change > -3 && b.change < 10 ? 1 : 0) * Math.log(b.volume);
+      return scoreB - scoreA;
+    });
+
+    const candidates = validStocks.slice(0, Math.min(80, validStocks.length));
+    updateProgress(50, `上位${candidates.length}銘柄を詳細分析中...`);
+
+    // Phase 4: Deep analysis
+    const results = [];
+    for (let i = 0; i < candidates.length; i++) {
+      if (cancelled) break;
+      const c = candidates[i];
+      const bars = await fetchHistorical(c.ticker);
+      const analysis = bars ? analyzeStock(bars) : null;
+
+      if (analysis && analysis.score > 15) {
+        results.push({
+          ...c,
+          score: analysis.score,
+          reasons: analysis.reasons,
+          analysisPrice: analysis.price,
+          rsi: analysis.rsi
+        });
+      }
+
+      const pct = 50 + ((i + 1) / candidates.length) * 50;
+      updateProgress(pct, `詳細分析: ${i + 1}/${candidates.length} (${c.ticker} ${c.name})`);
+      updateStats(scanned, validStocks.length, i + 1);
+
+      if (i % 3 === 2) await sleep(300);
+    }
+
+    if (cancelled) { resetUI(); return; }
+
+    // Phase 5: Display results
+    results.sort((a, b) => b.score - a.score);
+    const top10 = results.slice(0, 10);
+    updateProgress(100, '分析完了！');
+
+    if (top10.length === 0) {
+      topResults.innerHTML = '<div class="empty-state"><div class="icon">🔍</div><p>条件に合う銘柄が見つかりませんでした。<br>市場が閉まっている可能性があります。</p></div>';
+    } else {
+      topResults.innerHTML = `<div class="top-header">分析結果 TOP ${top10.length}</div>` +
+        top10.map((s, i) => renderResultCard(s, i + 1)).join('');
+      // Save top result to history
+      saveToHistory(top10[0]);
+    }
+
+  } catch (e) {
+    topResults.innerHTML = `<div class="result-card" style="border-color:var(--red)"><p style="color:var(--red)">エラー: ${e.message}</p><p style="color:var(--dim);font-size:12px;margin-top:8px">ネットワーク接続を確認してください。</p></div>`;
+  }
+
+  resetUI();
+}
+
+function renderResultCard(stock, rank) {
+  const changeClass = stock.change >= 0 ? 'up' : 'down';
+  const changeSign = stock.change >= 0 ? '+' : '';
+  return `
+    <div class="result-card">
+      <div class="result-rank">${rank}位</div>
+      <div class="result-header">
+        <div>
+          <div class="result-ticker">${stock.ticker}</div>
+          <div class="result-name">${stock.name}</div>
+          ${stock.sector ? `<span class="result-sector">${stock.sector}</span>` : ''}
+        </div>
+        <div class="result-score">
+          <div class="num">${stock.score}</div>
+          <div class="label">AIスコア</div>
+        </div>
+      </div>
+      <div class="result-price">
+        ¥${stock.price?.toLocaleString() || '---'}
+        <span class="result-change ${changeClass}">${changeSign}${stock.change?.toFixed(2) || 0}%</span>
+      </div>
+      <div class="reasons">
+        ${stock.reasons.map(r => `<span class="reason-tag">${r}</span>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// ============ HISTORY (localStorage) ============
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem('stockPickerHistory') || '[]'); } catch { return []; }
+}
+function saveToHistory(stock) {
+  const h = getHistory();
+  h.unshift({
+    ticker: stock.ticker, name: stock.name, sector: stock.sector,
+    price: stock.price, score: stock.score, reasons: stock.reasons,
+    date: new Date().toISOString(), change: stock.change
+  });
+  if (h.length > 100) h.length = 100;
+  localStorage.setItem('stockPickerHistory', JSON.stringify(h));
+  renderHistory();
+}
+function deleteHistory(idx) {
+  const h = getHistory();
+  h.splice(idx, 1);
+  localStorage.setItem('stockPickerHistory', JSON.stringify(h));
+  renderHistory();
+}
+function renderHistory() {
+  const h = getHistory();
+  const el = document.getElementById('historyList');
+  if (h.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>検出履歴はまだありません。<br>銘柄検出を実行してください。</p></div>';
+    return;
+  }
+  el.innerHTML = h.map((item, i) => `
+    <div class="history-item">
+      <div class="history-left">
+        <div class="history-ticker">${item.ticker} <span style="font-weight:400;font-size:12px;color:var(--dim)">${item.name}</span></div>
+        <div class="history-date">${new Date(item.date).toLocaleString('ja-JP')} ・ スコア: ${item.score}</div>
+      </div>
+      <div class="history-right">
+        <div class="history-price">¥${item.price?.toLocaleString() || '---'}</div>
+        <button class="history-del" onclick="deleteHistory(${i})">×</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============ UI HELPERS ============
+function showPage(n) {
+  document.querySelectorAll('.page').forEach((p, i) => p.classList.toggle('active', i === n));
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === n));
+  if (n === 1) renderHistory();
+}
+function setMode(mode) {
+  scanMode = mode;
+  document.getElementById('mode-quick').classList.toggle('active', mode === 'quick');
+  document.getElementById('mode-full').classList.toggle('active', mode === 'full');
+}
+function cancelScan() { cancelled = true; }
+function updateProgress(pct, text) {
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressText').textContent = text;
+}
+function updateStats(scanned, valid, analyzed) {
+  document.getElementById('statScanned').textContent = scanned.toLocaleString();
+  document.getElementById('statValid').textContent = valid.toLocaleString();
+  document.getElementById('statAnalyzed').textContent = analyzed;
+}
+function resetUI() {
+  scanning = false;
+  document.getElementById('scanBtn').disabled = false;
+  document.getElementById('cancelBtn').classList.remove('active');
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// Init
+renderHistory();
+</script>
+</body>
+</html>
