@@ -417,14 +417,30 @@ async function fetchWithProxy(url) {
   throw new Error('All proxies failed');
 }
 
-async function fetchQuoteBatch(tickers) {
-  const symbols = tickers.map(t => t + '.T').join(',');
-  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`;
+async function quickScreenStock(ticker) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}.T?range=5d&interval=1d`;
   try {
     const res = await fetchWithProxy(url);
     const data = await res.json();
-    return data?.quoteResponse?.result || [];
-  } catch { return []; }
+    const result = data?.chart?.result?.[0];
+    if (!result?.timestamp || result.timestamp.length === 0) return null;
+    const q = result.indicators.quote[0];
+    const meta = result.meta;
+    const lastIdx = result.timestamp.length - 1;
+    const price = q.close[lastIdx];
+    const volume = q.volume[lastIdx];
+    if (!price || price <= 0) return null;
+    const avgVol = q.volume.filter(v => v > 0);
+    const avgVolume = avgVol.length > 0 ? avgVol.reduce((a, b) => a + b, 0) / avgVol.length : 0;
+    if (avgVolume < 50000) return null;
+    const prevClose = lastIdx > 0 ? q.close[lastIdx - 1] : price;
+    const change = prevClose > 0 ? ((price - prevClose) / prevClose * 100) : 0;
+    return {
+      ticker, price, volume: volume || 0, change,
+      name: meta?.shortName || meta?.longName || ticker,
+      sector: ''
+    };
+  } catch { return null; }
 }
 
 async function fetchHistorical(ticker) {
@@ -436,17 +452,31 @@ async function fetchHistorical(ticker) {
     if (!result?.timestamp) return null;
     const ts = result.timestamp;
     const q = result.indicators.quote[0];
+    const meta = result.meta;
     const bars = [];
     for (let i = 0; i < ts.length; i++) {
       if (q.close[i] != null && q.high[i] != null && q.low[i] != null && q.open[i] != null) {
         bars.push({ date: new Date(ts[i] * 1000).toISOString().slice(0, 10), open: q.open[i], high: q.high[i], low: q.low[i], close: q.close[i], volume: q.volume[i] || 0 });
       }
     }
+    if (bars.length > 0) {
+      bars._meta = { name: meta?.shortName || meta?.longName || ticker, symbol: meta?.symbol || ticker };
+    }
     return bars;
   } catch { return null; }
 }
 
 // ============ SCAN ENGINE ============
+async function runConcurrent(items, fn, concurrency) {
+  const results = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
 async function startScan() {
   if (scanning) return;
   scanning = true;
@@ -465,7 +495,6 @@ async function startScan() {
   updateStats(0, 0, 0);
 
   try {
-    // Phase 1: Get stock codes
     let codes;
     if (scanMode === 'quick') {
       codes = QUICK_STOCKS.map(String);
@@ -474,86 +503,105 @@ async function startScan() {
       for (let i = 1301; i <= 9999; i++) codes.push(String(i));
     }
 
-    // Phase 2: Batch quote screening
-    const batchSize = 50;
-    const batches = [];
-    for (let i = 0; i < codes.length; i += batchSize) {
-      batches.push(codes.slice(i, i + batchSize));
-    }
+    const results = [];
+    let scanned = 0, valid = 0, analyzed = 0;
 
-    const validStocks = [];
-    let scanned = 0;
+    if (scanMode === 'quick') {
+      // Quick mode: single-pass - fetch 6mo data, screen + analyze together
+      const CONC = 6;
+      for (let i = 0; i < codes.length; i += CONC) {
+        if (cancelled) break;
+        const batch = codes.slice(i, i + CONC);
+        const promises = batch.map(async (code) => {
+          const bars = await fetchHistorical(code);
+          if (!bars || bars.length < 60) return null;
+          const avgVol = bars.slice(-20).reduce((s, b) => s + b.volume, 0) / 20;
+          if (avgVol < 50000) return null;
+          const analysis = analyzeStock(bars);
+          if (!analysis || analysis.score <= 15) return null;
+          const lastBar = bars[bars.length - 1];
+          const prevBar = bars[bars.length - 2];
+          const change = prevBar ? ((lastBar.close - prevBar.close) / prevBar.close * 100) : 0;
+          const stockName = bars._meta?.name || code;
+          return {
+            ticker: code, name: stockName, score: analysis.score, reasons: analysis.reasons,
+            price: lastBar.close, change, sector: '', volume: lastBar.volume
+          };
+        });
+        const batchResults = await Promise.all(promises);
+        scanned += batch.length;
+        for (const r of batchResults) {
+          if (r) { valid++; analyzed++; results.push(r); }
+          else { /* check if bars existed */ }
+        }
+        // Count valid separately (stocks with data)
+        const pct = Math.min(99, (scanned / codes.length) * 100);
+        updateProgress(pct, `分析中: ${scanned}/${codes.length}`);
+        updateStats(scanned, results.length, scanned);
+        if (i % (CONC * 2) === 0) await sleep(100);
+      }
+    } else {
+      // Full mode: two-pass
+      // Phase 1: Quick screen using v8 chart 5d data
+      const validStocks = [];
+      const CONC = 8;
+      updateProgress(0, `${codes.length}銘柄をスクリーニング中...`);
 
-    updateProgress(0, `${codes.length}銘柄をスクリーニング中...`);
+      for (let i = 0; i < codes.length; i += CONC) {
+        if (cancelled) break;
+        const batch = codes.slice(i, i + CONC);
+        const promises = batch.map(code => quickScreenStock(code));
+        const batchResults = await Promise.all(promises);
+        scanned += batch.length;
+        for (const r of batchResults) {
+          if (r) validStocks.push(r);
+        }
+        valid = validStocks.length;
+        const pct = (scanned / codes.length) * 50;
+        updateProgress(pct, `スクリーニング: ${scanned}/${codes.length} (有効: ${valid})`);
+        updateStats(scanned, valid, 0);
+        if (i % (CONC * 5) === 0) await sleep(200);
+      }
 
-    for (let i = 0; i < batches.length; i++) {
-      if (cancelled) break;
-      const quotes = await fetchQuoteBatch(batches[i]);
-      scanned += batches[i].length;
+      if (cancelled) { resetUI(); return; }
 
-      for (const q of quotes) {
-        if (q.regularMarketPrice && q.regularMarketVolume > 50000 && q.marketCap > 1e9) {
-          validStocks.push({
-            ticker: q.symbol.replace('.T', ''),
-            name: q.shortName || q.longName || q.symbol,
-            price: q.regularMarketPrice,
-            change: q.regularMarketChangePercent || 0,
-            volume: q.regularMarketVolume,
-            marketCap: q.marketCap,
-            sector: q.sector || ''
+      // Phase 2: Sort by volume and take top candidates for deep analysis
+      validStocks.sort((a, b) => {
+        const scoreA = (a.change > -3 && a.change < 10 ? 1 : 0) * Math.log(Math.max(1, a.volume));
+        const scoreB = (b.change > -3 && b.change < 10 ? 1 : 0) * Math.log(Math.max(1, b.volume));
+        return scoreB - scoreA;
+      });
+
+      const candidates = validStocks.slice(0, Math.min(80, validStocks.length));
+      updateProgress(50, `上位${candidates.length}銘柄を詳細分析中...`);
+
+      for (let i = 0; i < candidates.length; i++) {
+        if (cancelled) break;
+        const c = candidates[i];
+        const bars = await fetchHistorical(c.ticker);
+        const analysis = bars ? analyzeStock(bars) : null;
+        analyzed++;
+
+        if (analysis && analysis.score > 15) {
+          results.push({
+            ...c,
+            score: analysis.score,
+            reasons: analysis.reasons,
+            price: analysis.price || c.price,
+            rsi: analysis.rsi
           });
         }
+
+        const pct = 50 + ((i + 1) / candidates.length) * 50;
+        updateProgress(pct, `詳細分析: ${i + 1}/${candidates.length} (${c.ticker} ${c.name})`);
+        updateStats(scanned, valid, analyzed);
+        if (i % 3 === 2) await sleep(300);
       }
-
-      const pct = ((i + 1) / batches.length) * 50;
-      updateProgress(pct, `スクリーニング: ${scanned}/${codes.length} (有効: ${validStocks.length})`);
-      updateStats(scanned, validStocks.length, 0);
-
-      // Rate limiting
-      if (i % 3 === 2) await sleep(500);
     }
 
     if (cancelled) { resetUI(); return; }
 
-    // Phase 3: Sort by potential (volume + change combo) and take top candidates
-    validStocks.sort((a, b) => {
-      // Prefer stocks with moderate positive change and high volume
-      const scoreA = (a.change > -3 && a.change < 10 ? 1 : 0) * Math.log(a.volume);
-      const scoreB = (b.change > -3 && b.change < 10 ? 1 : 0) * Math.log(b.volume);
-      return scoreB - scoreA;
-    });
-
-    const candidates = validStocks.slice(0, Math.min(80, validStocks.length));
-    updateProgress(50, `上位${candidates.length}銘柄を詳細分析中...`);
-
-    // Phase 4: Deep analysis
-    const results = [];
-    for (let i = 0; i < candidates.length; i++) {
-      if (cancelled) break;
-      const c = candidates[i];
-      const bars = await fetchHistorical(c.ticker);
-      const analysis = bars ? analyzeStock(bars) : null;
-
-      if (analysis && analysis.score > 15) {
-        results.push({
-          ...c,
-          score: analysis.score,
-          reasons: analysis.reasons,
-          analysisPrice: analysis.price,
-          rsi: analysis.rsi
-        });
-      }
-
-      const pct = 50 + ((i + 1) / candidates.length) * 50;
-      updateProgress(pct, `詳細分析: ${i + 1}/${candidates.length} (${c.ticker} ${c.name})`);
-      updateStats(scanned, validStocks.length, i + 1);
-
-      if (i % 3 === 2) await sleep(300);
-    }
-
-    if (cancelled) { resetUI(); return; }
-
-    // Phase 5: Display results
+    // Display results
     results.sort((a, b) => b.score - a.score);
     const top10 = results.slice(0, 10);
     updateProgress(100, '分析完了！');
@@ -563,7 +611,6 @@ async function startScan() {
     } else {
       topResults.innerHTML = `<div class="top-header">分析結果 TOP ${top10.length}</div>` +
         top10.map((s, i) => renderResultCard(s, i + 1)).join('');
-      // Save top result to history
       saveToHistory(top10[0]);
     }
 
