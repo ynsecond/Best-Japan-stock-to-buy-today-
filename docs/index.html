@@ -80,6 +80,45 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;bac
 .stat-label{font-size:9px;color:var(--dim);margin-top:2px}
 .top-results{margin-top:8px}
 .top-header{font-size:14px;font-weight:700;margin-bottom:12px;color:var(--accent)}
+.result-card.clickable{cursor:pointer;transition:transform .15s,border-color .15s}
+.result-card.clickable:active{transform:scale(.98);border-color:var(--accent)}
+.history-item.clickable{cursor:pointer;transition:transform .15s}
+.history-item.clickable:active{transform:scale(.98)}
+.history-pnl{font-size:12px;font-weight:700;margin-top:2px}
+.history-pnl.win{color:var(--green)}
+.history-pnl.lose{color:var(--red)}
+.history-detected{font-size:11px;color:var(--dim)}
+.history-current{font-size:14px;font-weight:700}
+.history-badge{display:inline-block;font-size:10px;font-weight:800;padding:2px 6px;border-radius:4px;margin-left:4px}
+.history-badge.win{background:rgba(0,230,118,.15);color:var(--green)}
+.history-badge.lose{background:rgba(255,82,82,.15);color:var(--red)}
+.history-update-btn{width:100%;padding:10px;border-radius:10px;border:1px solid var(--accent);background:rgba(255,215,0,.08);color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:12px}
+.history-update-btn:disabled{opacity:.4;cursor:not-allowed}
+/* Full-screen stock detail popup */
+.stock-popup-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);z-index:1000;display:none;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.stock-popup-overlay.active{display:block}
+.stock-popup{background:var(--bg);min-height:100vh;padding:0 0 calc(var(--safe-bottom) + 20px)}
+.popup-header{display:flex;justify-content:space-between;align-items:center;padding:calc(var(--safe-top) + 8px) 16px 12px;background:linear-gradient(135deg,#1a1a3e,#0d0d2b);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:1001}
+.popup-close{background:none;border:none;color:var(--text);font-size:28px;cursor:pointer;padding:4px 8px;line-height:1}
+.popup-title{font-size:18px;font-weight:700;color:var(--accent)}
+.popup-subtitle{font-size:12px;color:var(--dim)}
+.popup-body{padding:16px}
+.chart-container{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:12px}
+.chart-canvas{width:100%;height:300px;display:block}
+.chart-controls{display:flex;flex-wrap:wrap;gap:6px;padding:12px}
+.chart-tf-btn{padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--dim);font-size:11px;font-weight:600;cursor:pointer;transition:.2s}
+.chart-tf-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(255,215,0,.1)}
+.indicator-toggles{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 12px}
+.ind-toggle{padding:5px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--dim);font-size:10px;font-weight:600;cursor:pointer;transition:.2s}
+.ind-toggle.on{border-color:var(--blue);color:var(--blue);background:rgba(68,138,255,.1)}
+.popup-section{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
+.popup-section-title{font-size:13px;font-weight:700;color:var(--accent);margin-bottom:10px}
+.popup-info-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}
+.popup-info-row:last-child{border-bottom:none}
+.popup-info-label{color:var(--dim)}
+.popup-info-value{font-weight:600}
+.loading-spinner-small{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -123,6 +162,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;bac
 </div>
 
 <div class="page" id="page1">
+<button class="history-update-btn" id="historyUpdateBtn" onclick="updateHistoryPrices()">現在価格を更新</button>
 <div id="historyList"></div>
 </div>
 
@@ -154,6 +194,20 @@ SMA/EMAトレンド、RSI、MACD、ボリンジャーバンド、一目均衡表
 <p style="font-size:13px;color:var(--dim);line-height:1.8">
 本アプリは投資助言ではありません。テクニカル分析に基づく参考情報です。投資判断は自己責任でお願いします。データはYahoo Finance APIから取得しています。
 </p>
+</div>
+</div>
+
+<!-- Stock Detail Popup -->
+<div class="stock-popup-overlay" id="stockPopup">
+<div class="stock-popup">
+<div class="popup-header">
+<div>
+<div class="popup-title" id="popupTitle">---</div>
+<div class="popup-subtitle" id="popupSubtitle">---</div>
+</div>
+<button class="popup-close" onclick="closePopup()">&times;</button>
+</div>
+<div class="popup-body" id="popupBody"></div>
 </div>
 </div>
 
@@ -603,15 +657,15 @@ async function startScan() {
 
     // Display results
     results.sort((a, b) => b.score - a.score);
-    const top10 = results.slice(0, 10);
+    const top40 = results.slice(0, 40);
     updateProgress(100, '分析完了！');
 
-    if (top10.length === 0) {
+    if (top40.length === 0) {
       topResults.innerHTML = '<div class="empty-state"><div class="icon">🔍</div><p>条件に合う銘柄が見つかりませんでした。<br>市場が閉まっている可能性があります。</p></div>';
     } else {
-      topResults.innerHTML = `<div class="top-header">分析結果 TOP ${top10.length}</div>` +
-        top10.map((s, i) => renderResultCard(s, i + 1)).join('');
-      saveToHistory(top10[0]);
+      topResults.innerHTML = `<div class="top-header">分析結果 TOP ${top40.length}</div>` +
+        top40.map((s, i) => renderResultCard(s, i + 1)).join('');
+      saveAllToHistory(top40);
     }
 
   } catch (e) {
@@ -624,8 +678,10 @@ async function startScan() {
 function renderResultCard(stock, rank) {
   const changeClass = stock.change >= 0 ? 'up' : 'down';
   const changeSign = stock.change >= 0 ? '+' : '';
+  const tickerEsc = (stock.ticker+'').replace(/'/g,"\\'");
+  const nameEsc = (stock.name+'').replace(/'/g,"\\'");
   return `
-    <div class="result-card">
+    <div class="result-card clickable" onclick="openStockPopup('${tickerEsc}','${nameEsc}')">
       <div class="result-rank">${rank}位</div>
       <div class="result-header">
         <div>
@@ -653,21 +709,62 @@ function renderResultCard(stock, rank) {
 function getHistory() {
   try { return JSON.parse(localStorage.getItem('stockPickerHistory') || '[]'); } catch { return []; }
 }
-function saveToHistory(stock) {
+function saveAllToHistory(stocks) {
   const h = getHistory();
-  h.unshift({
-    ticker: stock.ticker, name: stock.name, sector: stock.sector,
-    price: stock.price, score: stock.score, reasons: stock.reasons,
-    date: new Date().toISOString(), change: stock.change
-  });
-  if (h.length > 100) h.length = 100;
+  const existingTickers = new Set(h.map(item => String(item.ticker)));
+  const now = new Date().toISOString();
+  let added = 0;
+  for (const stock of stocks) {
+    const tk = String(stock.ticker);
+    if (existingTickers.has(tk)) continue;
+    h.unshift({
+      ticker: tk, name: stock.name, sector: stock.sector,
+      detectedPrice: stock.price, currentPrice: stock.price,
+      score: stock.score, reasons: stock.reasons,
+      date: now, change: stock.change,
+      lastUpdated: now
+    });
+    existingTickers.add(tk);
+    added++;
+  }
+  if (h.length > 500) h.length = 500;
   localStorage.setItem('stockPickerHistory', JSON.stringify(h));
-  renderHistory();
+  if (added > 0) renderHistory();
 }
-function deleteHistory(idx) {
+function deleteHistory(idx, e) {
+  if (e) { e.stopPropagation(); e.preventDefault(); }
   const h = getHistory();
   h.splice(idx, 1);
   localStorage.setItem('stockPickerHistory', JSON.stringify(h));
+  renderHistory();
+}
+async function updateHistoryPrices() {
+  const btn = document.getElementById('historyUpdateBtn');
+  btn.disabled = true;
+  btn.textContent = '価格更新中...';
+  const h = getHistory();
+  for (let i = 0; i < h.length; i++) {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${h[i].ticker}.T?range=1d&interval=1d`;
+      const res = await fetchWithProxy(url);
+      const data = await res.json();
+      const result = data?.chart?.result?.[0];
+      if (result) {
+        const q = result.indicators.quote[0];
+        const lastIdx = result.timestamp.length - 1;
+        const price = q.close[lastIdx];
+        if (price && price > 0) {
+          h[i].currentPrice = price;
+          h[i].lastUpdated = new Date().toISOString();
+        }
+      }
+    } catch {}
+    if (i % 5 === 4) await sleep(200);
+    btn.textContent = `価格更新中... ${i+1}/${h.length}`;
+  }
+  localStorage.setItem('stockPickerHistory', JSON.stringify(h));
+  btn.disabled = false;
+  btn.textContent = '現在価格を更新';
   renderHistory();
 }
 function renderHistory() {
@@ -677,18 +774,354 @@ function renderHistory() {
     el.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>検出履歴はまだありません。<br>銘柄検出を実行してください。</p></div>';
     return;
   }
-  el.innerHTML = h.map((item, i) => `
-    <div class="history-item">
+  el.innerHTML = h.map((item, i) => {
+    const dp = item.detectedPrice || item.price || 0;
+    const cp = item.currentPrice || dp;
+    const diff = cp - dp;
+    const diffPct = dp > 0 ? ((diff / dp) * 100) : 0;
+    const isWin = diff >= 0;
+    const cls = isWin ? 'win' : 'lose';
+    const sign = isWin ? '+' : '';
+    const tickerEsc = (item.ticker+'').replace(/'/g,"\\'");
+    const nameEsc = (item.name+'').replace(/'/g,"\\'");
+    return `
+    <div class="history-item clickable" onclick="openStockPopup('${tickerEsc}','${nameEsc}')">
       <div class="history-left">
-        <div class="history-ticker">${item.ticker} <span style="font-weight:400;font-size:12px;color:var(--dim)">${item.name}</span></div>
-        <div class="history-date">${new Date(item.date).toLocaleString('ja-JP')} ・ スコア: ${item.score}</div>
+        <div class="history-ticker">${item.ticker} <span style="font-weight:400;font-size:12px;color:var(--dim)">${item.name}</span>
+          <span class="history-badge ${cls}">${isWin ? '勝ち' : '負け'}</span>
+        </div>
+        <div class="history-detected">検出時: ¥${dp.toLocaleString()} / スコア: ${item.score}</div>
+        <div class="history-date">${new Date(item.date).toLocaleString('ja-JP')}</div>
       </div>
       <div class="history-right">
-        <div class="history-price">¥${item.price?.toLocaleString() || '---'}</div>
-        <button class="history-del" onclick="deleteHistory(${i})">×</button>
+        <div class="history-current">¥${cp.toLocaleString()}</div>
+        <div class="history-pnl ${cls}">${sign}¥${Math.abs(diff).toLocaleString(undefined,{maximumFractionDigits:0})} (${sign}${diffPct.toFixed(2)}%)</div>
+        <button class="history-del" onclick="deleteHistory(${i},event)">×</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ============ STOCK DETAIL POPUP ============
+let popupChartData = null;
+let popupIndicators = { sma5:true, sma25:true, sma75:false, sma200:false, bb:false, parabolic:false, ichimoku:false };
+let popupTimeframe = '6mo_1d';
+
+function openStockPopup(ticker, name) {
+  const popup = document.getElementById('stockPopup');
+  document.getElementById('popupTitle').textContent = ticker + '.T';
+  document.getElementById('popupSubtitle').textContent = name;
+  document.getElementById('popupBody').innerHTML = '<div style="text-align:center;padding:40px"><div class="loading-spinner-small" style="width:32px;height:32px;border-width:3px"></div><p style="color:var(--dim);margin-top:12px">データ読み込み中...</p></div>';
+  popup.classList.add('active');
+  document.body.style.overflow = 'hidden';
+  loadStockDetail(ticker, name);
+}
+function closePopup() {
+  document.getElementById('stockPopup').classList.remove('active');
+  document.body.style.overflow = '';
+}
+
+async function loadStockDetail(ticker, name) {
+  const body = document.getElementById('popupBody');
+  try {
+    const tfMap = {
+      '1d_5m': {range:'1d',interval:'5m'}, '5d_15m': {range:'5d',interval:'15m'},
+      '1mo_1h': {range:'1mo',interval:'1h'}, '3mo_1d': {range:'3mo',interval:'1d'},
+      '6mo_1d': {range:'6mo',interval:'1d'}, '1y_1d': {range:'1y',interval:'1d'},
+      '5y_1wk': {range:'5y',interval:'1wk'}, 'max_1mo': {range:'max',interval:'1mo'}
+    };
+    const tf = tfMap[popupTimeframe] || tfMap['6mo_1d'];
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}.T?range=${tf.range}&interval=${tf.interval}`;
+    const res = await fetchWithProxy(url);
+    const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result?.timestamp) { body.innerHTML = '<p style="color:var(--red);text-align:center;padding:40px">データ取得失敗</p>'; return; }
+    const ts = result.timestamp;
+    const q = result.indicators.quote[0];
+    const meta = result.meta;
+    const bars = [];
+    for (let i = 0; i < ts.length; i++) {
+      if (q.close[i] != null && q.open[i] != null && q.high[i] != null && q.low[i] != null) {
+        bars.push({ date: ts[i]*1000, open:q.open[i], high:q.high[i], low:q.low[i], close:q.close[i], volume:q.volume[i]||0 });
+      }
+    }
+    if (bars.length < 2) { body.innerHTML = '<p style="color:var(--red);text-align:center;padding:40px">十分なデータがありません</p>'; return; }
+    popupChartData = { ticker, name, bars, meta };
+    renderPopupContent(ticker, name, bars, meta);
+  } catch(e) {
+    body.innerHTML = `<p style="color:var(--red);text-align:center;padding:40px">エラー: ${e.message}</p>`;
+  }
+}
+
+function renderPopupContent(ticker, name, bars, meta) {
+  const body = document.getElementById('popupBody');
+  const last = bars[bars.length-1];
+  const prev = bars[bars.length-2];
+  const chg = prev ? ((last.close - prev.close)/prev.close*100) : 0;
+  const chgAmt = prev ? (last.close - prev.close) : 0;
+  const chgCls = chg >= 0 ? 'up' : 'down';
+  const chgSign = chg >= 0 ? '+' : '';
+
+  // Price info
+  const high52 = Math.max(...bars.map(b=>b.high));
+  const low52 = Math.min(...bars.map(b=>b.low));
+  const avgVol = bars.slice(-20).reduce((s,b)=>s+b.volume,0)/Math.min(20,bars.length);
+  const closes = bars.map(b=>b.close);
+  const rsiArr = calcRSI(closes);
+  const rsiVal = rsiArr[rsiArr.length-1];
+  const macdData = calcMACD(closes);
+  const macdVal = macdData.macd[macdData.macd.length-1];
+  const macdSig = macdData.signal[macdData.signal.length-1];
+
+  const tfButtons = [
+    {id:'1d_5m',label:'5分足'},{id:'5d_15m',label:'15分足'},
+    {id:'1mo_1h',label:'1時間足'},{id:'3mo_1d',label:'日足(3M)'},
+    {id:'6mo_1d',label:'日足(6M)'},{id:'1y_1d',label:'日足(1Y)'},
+    {id:'5y_1wk',label:'週足'},{id:'max_1mo',label:'月足'}
+  ];
+  const indToggles = [
+    {id:'sma5',label:'SMA5'},{id:'sma25',label:'SMA25'},{id:'sma75',label:'SMA75'},{id:'sma200',label:'SMA200'},
+    {id:'bb',label:'ボリンジャーバンド'},{id:'parabolic',label:'パラボリック'},{id:'ichimoku',label:'一目均衡表'}
+  ];
+
+  const tickerEsc = (ticker+'').replace(/'/g,"\\'");
+  const nameEsc = (name+'').replace(/'/g,"\\'");
+
+  body.innerHTML = `
+    <div style="padding:4px 0 12px">
+      <span style="font-size:28px;font-weight:800">¥${last.close.toLocaleString()}</span>
+      <span class="result-change ${chgCls}" style="font-size:16px">${chgSign}${chgAmt.toFixed(1)} (${chgSign}${chg.toFixed(2)}%)</span>
+    </div>
+    <div class="chart-container">
+      <canvas id="chartCanvas" class="chart-canvas" width="800" height="400"></canvas>
+      <div class="chart-controls">
+        ${tfButtons.map(t=>`<button class="chart-tf-btn ${popupTimeframe===t.id?'active':''}" onclick="changeTimeframe('${t.id}','${tickerEsc}','${nameEsc}')">${t.label}</button>`).join('')}
+      </div>
+      <div class="indicator-toggles">
+        ${indToggles.map(t=>`<button class="ind-toggle ${popupIndicators[t.id]?'on':''}" onclick="toggleIndicator('${t.id}','${tickerEsc}','${nameEsc}')">${t.label}</button>`).join('')}
       </div>
     </div>
-  `).join('');
+    <div class="popup-section">
+      <div class="popup-section-title">株価情報</div>
+      <div class="popup-info-row"><span class="popup-info-label">始値</span><span class="popup-info-value">¥${last.open.toLocaleString()}</span></div>
+      <div class="popup-info-row"><span class="popup-info-label">高値</span><span class="popup-info-value">¥${last.high.toLocaleString()}</span></div>
+      <div class="popup-info-row"><span class="popup-info-label">安値</span><span class="popup-info-value">¥${last.low.toLocaleString()}</span></div>
+      <div class="popup-info-row"><span class="popup-info-label">出来高</span><span class="popup-info-value">${last.volume.toLocaleString()}</span></div>
+      <div class="popup-info-row"><span class="popup-info-label">平均出来高(20)</span><span class="popup-info-value">${Math.round(avgVol).toLocaleString()}</span></div>
+      <div class="popup-info-row"><span class="popup-info-label">期間高値</span><span class="popup-info-value">¥${high52.toLocaleString()}</span></div>
+      <div class="popup-info-row"><span class="popup-info-label">期間安値</span><span class="popup-info-value">¥${low52.toLocaleString()}</span></div>
+    </div>
+    <div class="popup-section">
+      <div class="popup-section-title">テクニカル指標</div>
+      <div class="popup-info-row"><span class="popup-info-label">RSI (14)</span><span class="popup-info-value" style="color:${rsiVal>70?'var(--red)':rsiVal<30?'var(--green)':'var(--text)'}">${rsiVal!==null?rsiVal.toFixed(1):'---'}</span></div>
+      <div class="popup-info-row"><span class="popup-info-label">MACD</span><span class="popup-info-value">${macdVal!==null?macdVal.toFixed(2):'---'}</span></div>
+      <div class="popup-info-row"><span class="popup-info-label">MACDシグナル</span><span class="popup-info-value">${macdSig!==null?macdSig.toFixed(2):'---'}</span></div>
+      <div class="popup-info-row"><span class="popup-info-label">MACD判定</span><span class="popup-info-value" style="color:${macdVal>macdSig?'var(--green)':'var(--red)'}">${macdVal>macdSig?'買いシグナル':'売りシグナル'}</span></div>
+    </div>
+    <div class="popup-section">
+      <div class="popup-section-title">移動平均線</div>
+      ${[5,25,75,200].map(p=>{
+        const sma = calcSMA(closes, p);
+        const val = sma[sma.length-1];
+        if (!val) return `<div class="popup-info-row"><span class="popup-info-label">SMA${p}</span><span class="popup-info-value">---</span></div>`;
+        const abv = last.close > val;
+        return `<div class="popup-info-row"><span class="popup-info-label">SMA${p}</span><span class="popup-info-value" style="color:${abv?'var(--green)':'var(--red)'}">¥${val.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,',')} ${abv?'▲上':'▼下'}</span></div>`;
+      }).join('')}
+    </div>
+    <div class="popup-section">
+      <div class="popup-section-title">財務・企業情報</div>
+      <div class="popup-info-row"><span class="popup-info-label">通貨</span><span class="popup-info-value">${meta?.currency||'JPY'}</span></div>
+      <div class="popup-info-row"><span class="popup-info-label">市場</span><span class="popup-info-value">${meta?.exchangeName||'東証'}</span></div>
+      <div class="popup-info-row"><span class="popup-info-label">銘柄タイプ</span><span class="popup-info-value">${meta?.instrumentType||'EQUITY'}</span></div>
+      <div class="popup-info-row"><span class="popup-info-label">タイムゾーン</span><span class="popup-info-value">${meta?.exchangeTimezoneName||'Asia/Tokyo'}</span></div>
+    </div>
+  `;
+  drawChart(bars);
+}
+
+function changeTimeframe(tf, ticker, name) {
+  popupTimeframe = tf;
+  loadStockDetail(ticker, name);
+}
+function toggleIndicator(id, ticker, name) {
+  popupIndicators[id] = !popupIndicators[id];
+  if (popupChartData) renderPopupContent(popupChartData.ticker, popupChartData.name, popupChartData.bars, popupChartData.meta);
+}
+
+// ============ CHART DRAWING ============
+function calcParabolicSAR(highs, lows, afStart=0.02, afMax=0.2) {
+  const n = highs.length;
+  const sar = new Array(n).fill(null);
+  if (n < 2) return sar;
+  let isUp = highs[1] > highs[0];
+  let af = afStart;
+  let ep = isUp ? highs[0] : lows[0];
+  sar[0] = isUp ? lows[0] : highs[0];
+  for (let i = 1; i < n; i++) {
+    sar[i] = sar[i-1] + af * (ep - sar[i-1]);
+    if (isUp) {
+      if (lows[i] < sar[i]) { isUp = false; sar[i] = ep; af = afStart; ep = lows[i]; }
+      else { if (highs[i] > ep) { ep = highs[i]; af = Math.min(af + afStart, afMax); } }
+    } else {
+      if (highs[i] > sar[i]) { isUp = true; sar[i] = ep; af = afStart; ep = highs[i]; }
+      else { if (lows[i] < ep) { ep = lows[i]; af = Math.min(af + afStart, afMax); } }
+    }
+  }
+  return sar;
+}
+
+function drawChart(bars) {
+  const canvas = document.getElementById('chartCanvas');
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+  const pad = {top:10,right:60,bottom:40,left:10};
+  const cW = W - pad.left - pad.right;
+  const chartH = H * 0.75;
+  const volH = H * 0.18;
+
+  // Clear
+  ctx.fillStyle = '#0d0d20';
+  ctx.fillRect(0, 0, W, H);
+
+  const closes = bars.map(b=>b.close);
+  const highs = bars.map(b=>b.high);
+  const lows = bars.map(b=>b.low);
+  const n = bars.length;
+  const allH = highs.concat(lows);
+  let minP = Math.min(...allH), maxP = Math.max(...allH);
+  const pRange = maxP - minP || 1;
+  minP -= pRange * 0.05; maxP += pRange * 0.05;
+  const maxVol = Math.max(...bars.map(b=>b.volume)) || 1;
+
+  const barW = Math.max(1, cW / n);
+  const x = i => pad.left + (i + 0.5) * barW;
+  const yP = p => pad.top + (1 - (p - minP) / (maxP - minP)) * chartH;
+  const yV = v => H - pad.bottom - (v / maxVol) * volH;
+
+  // Grid
+  ctx.strokeStyle = '#1a1a3a';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < 5; i++) {
+    const gy = pad.top + (chartH / 4) * i;
+    ctx.beginPath(); ctx.moveTo(pad.left, gy); ctx.lineTo(W - pad.right, gy); ctx.stroke();
+    const price = maxP - ((maxP - minP) / 4) * i;
+    ctx.fillStyle = '#666';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('¥' + price.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,','), W - pad.right + 4, gy + 3);
+  }
+
+  // Volume bars
+  for (let i = 0; i < n; i++) {
+    const bx = x(i) - barW * 0.35;
+    const bh = (bars[i].volume / maxVol) * volH;
+    ctx.fillStyle = bars[i].close >= bars[i].open ? 'rgba(0,230,118,.25)' : 'rgba(255,82,82,.25)';
+    ctx.fillRect(bx, H - pad.bottom - bh, barW * 0.7, bh);
+  }
+
+  // Candlesticks
+  for (let i = 0; i < n; i++) {
+    const b = bars[i];
+    const isUp = b.close >= b.open;
+    ctx.strokeStyle = ctx.fillStyle = isUp ? '#00e676' : '#ff5252';
+    // Wick
+    ctx.beginPath();
+    ctx.moveTo(x(i), yP(b.high));
+    ctx.lineTo(x(i), yP(b.low));
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Body
+    const bodyTop = yP(Math.max(b.open, b.close));
+    const bodyBot = yP(Math.min(b.open, b.close));
+    const bodyH = Math.max(1, bodyBot - bodyTop);
+    ctx.fillRect(x(i) - barW * 0.35, bodyTop, barW * 0.7, bodyH);
+  }
+
+  // Indicators
+  const drawLine = (arr, color, width=1.5) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i] === null) continue;
+      const px = x(i), py = yP(arr[i]);
+      if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  };
+
+  if (popupIndicators.sma5 && n >= 5) drawLine(calcSMA(closes, 5), '#ff9800');
+  if (popupIndicators.sma25 && n >= 25) drawLine(calcSMA(closes, 25), '#2196f3');
+  if (popupIndicators.sma75 && n >= 75) drawLine(calcSMA(closes, 75), '#e040fb');
+  if (popupIndicators.sma200 && n >= 200) drawLine(calcSMA(closes, 200), '#f44336');
+
+  if (popupIndicators.bb && n >= 20) {
+    const bb = calcBB(closes);
+    drawLine(bb.upper, 'rgba(100,181,246,.6)');
+    drawLine(bb.middle, 'rgba(100,181,246,.3)');
+    drawLine(bb.lower, 'rgba(100,181,246,.6)');
+    // Fill between bands
+    ctx.fillStyle = 'rgba(100,181,246,.06)';
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i++) {
+      if (bb.upper[i] === null) continue;
+      if (!started) { ctx.moveTo(x(i), yP(bb.upper[i])); started = true; } else ctx.lineTo(x(i), yP(bb.upper[i]));
+    }
+    for (let i = n - 1; i >= 0; i--) {
+      if (bb.lower[i] === null) continue;
+      ctx.lineTo(x(i), yP(bb.lower[i]));
+    }
+    ctx.closePath(); ctx.fill();
+  }
+
+  if (popupIndicators.parabolic && n >= 5) {
+    const sar = calcParabolicSAR(highs, lows);
+    for (let i = 0; i < n; i++) {
+      if (sar[i] === null) continue;
+      const isBelow = sar[i] < closes[i];
+      ctx.fillStyle = isBelow ? 'rgba(0,230,118,.7)' : 'rgba(255,82,82,.7)';
+      ctx.beginPath();
+      ctx.arc(x(i), yP(sar[i]), 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  if (popupIndicators.ichimoku && n >= 52) {
+    const ich = calcIchimoku(highs, lows);
+    drawLine(ich.tenkan, 'rgba(0,188,212,.7)');
+    drawLine(ich.kijun, 'rgba(233,30,99,.7)');
+    // Cloud fill
+    ctx.globalAlpha = 0.08;
+    for (let i = 0; i < n; i++) {
+      if (ich.senkouA[i] === null || ich.senkouB[i] === null) continue;
+      const top = Math.max(ich.senkouA[i], ich.senkouB[i]);
+      const bot = Math.min(ich.senkouA[i], ich.senkouB[i]);
+      ctx.fillStyle = ich.senkouA[i] > ich.senkouB[i] ? '#00e676' : '#ff5252';
+      ctx.fillRect(x(i) - barW/2, yP(top), barW, yP(bot) - yP(top));
+    }
+    ctx.globalAlpha = 1;
+    drawLine(ich.senkouA, 'rgba(76,175,80,.4)');
+    drawLine(ich.senkouB, 'rgba(244,67,54,.4)');
+  }
+
+  // Date labels
+  ctx.fillStyle = '#666';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'center';
+  const labelStep = Math.max(1, Math.floor(n / 6));
+  for (let i = 0; i < n; i += labelStep) {
+    const d = new Date(bars[i].date);
+    const label = `${d.getMonth()+1}/${d.getDate()}`;
+    ctx.fillText(label, x(i), H - pad.bottom + 14);
+  }
 }
 
 // ============ UI HELPERS ============
